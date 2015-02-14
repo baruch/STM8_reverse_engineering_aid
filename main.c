@@ -42,7 +42,6 @@ void uart_init()
 	USART1_BRR1 = 0x0D; // 9600 baud, order important between BRRs, BRR1 must be last
 
 	USART1_CR2 = USART_CR2_TEN | USART_CR2_REN; // Allow TX & RX
-//	USART1_CR2 = USART_CR2_TEN; // Allow TX
 }
 
 int main()
@@ -78,14 +77,21 @@ int main()
 	PD_ODR = 0x00;
 
 	do {
-		uart_write("Hello World!\r\n");
+		uint8_t c1v = c1 ? 0xFF : 0x00;
+		uint8_t c2v = c2 ? 0xFF : 0x00;
+		uint8_t v = 1 << (p-1);
+
 		uart_write("P");
 		uart_write_ch('A' + r - 1);
-		uart_write_ch('0' + p);
+		uart_write_ch('1' + p - 1);
 		uart_write(" CR1 ");
 		uart_write_ch('0' + c1);
 		uart_write(" CR2 ");
 		uart_write_ch('0' + c2);
+		uart_write(" r=");
+		uart_write_ch('0' + r);
+		uart_write(" p=");
+		uart_write_ch('0' + p);
 		uart_write("\r\n");
 
 		PA_ODR = 0;
@@ -94,21 +100,21 @@ int main()
 		PD_ODR = 0;
 
 		if (r == 1) {
-			PA_CR1 = c1 ? 0xFF : 0x00;
-			PA_CR2 = c2 ? 0xFF : 0x00;
-			PA_ODR = 1 << (p-1);
+			PA_CR1 = c1v;
+			PA_CR2 = c2v;
+			PA_ODR = v;
 		} else if (r == 2) {
-			PB_CR1 = c1 ? 0xFF : 0x00;
-			PB_CR2 = c2 ? 0xFF : 0x00;
-			PB_ODR = 1 << (p-1);
+			PB_CR1 = c1v;
+			PB_CR2 = c2v;
+			PB_ODR = v;
 		} else if (r == 3) {
-			PC_CR1 = c1 ? 0xFF : 0x00;
-			PC_CR2 = c2 ? 0xFF : 0x00;
-			PC_ODR = 1 << (p-1);
+			PC_CR1 = c1v;
+			PC_CR2 = c2v;
+			PC_ODR = v;
 		} else if (r == 4) {
-			PD_CR1 = c1 ? 0xFF : 0x00;
-			PD_CR2 = c2 ? 0xFF : 0x00;
-			PD_ODR = 1 << (p-1);
+			PD_CR1 = c1v;
+			PD_CR2 = c2v;
+			PD_ODR = v;
 		}
 		//for(i = 0; i < 1000000; i++) { } // Sleep
 
@@ -120,7 +126,7 @@ int main()
 		else if (ch >= 'a' && ch <= 'd')
 			r = ch - 'a' + 1;
 		else if (ch >= '1' && ch <= '8')
-			p = ch - '0';
+			p = ch - '1' + 1;
 		else if (ch == 'Q' || ch == 'q')
 			c1 = 0;
 		else if (ch == 'W' || ch == 'w')
