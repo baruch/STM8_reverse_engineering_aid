@@ -21,6 +21,31 @@ void uart_write(const char *str)
 	}
 }
 
+#if 0
+void uart_write_nibble(uint8_t v)
+{
+	uint8_t ch;
+
+	if (v < 10)
+		ch = '0' + v;
+	else
+		ch = 'A' + v - 10;
+
+	uart_write_ch(ch);
+}
+
+void uart_write_hex(uint8_t v)
+{
+	uint8_t nibble;
+
+	nibble = (v&0xF0) >> 4;
+	uart_write_nibble(nibble);
+
+	nibble = v & 0x0F;
+	uart_write_nibble(nibble);
+}
+#endif
+
 uint8_t uart_read_ch(void)
 {
 	while (!(USART1_SR & USART_SR_RXNE));
@@ -49,7 +74,7 @@ int main()
 	uint8_t ch;
 	unsigned long i = 0;
 	uint8_t r = 1;
-	uint8_t p = 1;
+	uint8_t p = 0;
 	uint8_t c1 = 0;
 	uint8_t c2 = 0;
 
@@ -79,19 +104,15 @@ int main()
 	do {
 		uint8_t c1v = c1 ? 0xFF : 0x00;
 		uint8_t c2v = c2 ? 0xFF : 0x00;
-		uint8_t v = 1 << (p-1);
+		uint8_t v = 1 << p;
 
 		uart_write("P");
 		uart_write_ch('A' + r - 1);
-		uart_write_ch('1' + p - 1);
+		uart_write_ch('0' + p);
 		uart_write(" CR1 ");
 		uart_write_ch('0' + c1);
 		uart_write(" CR2 ");
 		uart_write_ch('0' + c2);
-		uart_write(" r=");
-		uart_write_ch('0' + r);
-		uart_write(" p=");
-		uart_write_ch('0' + p);
 		uart_write("\r\n");
 
 		PA_ODR = 0;
@@ -116,7 +137,6 @@ int main()
 			PD_CR2 = c2v;
 			PD_ODR = v;
 		}
-		//for(i = 0; i < 1000000; i++) { } // Sleep
 
 		flush_write();
 		ch = uart_read_ch();
@@ -125,8 +145,8 @@ int main()
 			r = ch - 'A' + 1;
 		else if (ch >= 'a' && ch <= 'd')
 			r = ch - 'a' + 1;
-		else if (ch >= '1' && ch <= '8')
-			p = ch - '1' + 1;
+		else if (ch >= '0' && ch <= '7')
+			p = ch - '0';
 		else if (ch == 'Q' || ch == 'q')
 			c1 = 0;
 		else if (ch == 'W' || ch == 'w')
