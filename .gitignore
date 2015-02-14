@@ -1,0 +1,9 @@
+*.rel
+*.ihx
+*.lk
+*.map
+*.rst
+*.lst
+*.asm
+*.sym
+tags
