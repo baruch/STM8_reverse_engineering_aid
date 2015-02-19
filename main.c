@@ -2,6 +2,13 @@
 #include <string.h>
 #include <stdint.h>
 
+uint8_t last_pa_idr;
+uint8_t last_pb_idr;
+uint8_t last_pc_idr;
+uint8_t last_pd_idr;
+
+uint8_t scan;
+
 void uart_write_ch(const char ch)
 {
 	while(!(USART1_SR & USART_SR_TXE));
@@ -21,7 +28,6 @@ void uart_write(const char *str)
 	}
 }
 
-#if 0
 void uart_write_nibble(uint8_t v)
 {
 	uint8_t ch;
@@ -34,7 +40,7 @@ void uart_write_nibble(uint8_t v)
 	uart_write_ch(ch);
 }
 
-void uart_write_hex(uint8_t v)
+void uart_write_hex_8(uint8_t v)
 {
 	uint8_t nibble;
 
@@ -44,7 +50,6 @@ void uart_write_hex(uint8_t v)
 	nibble = v & 0x0F;
 	uart_write_nibble(nibble);
 }
-#endif
 
 uint8_t uart_read_ch(void)
 {
@@ -117,7 +122,224 @@ void input_configure()
 	base_configure();
 }
 
-uint8_t process_input(uint8_t port, uint8_t state, uint8_t last_state)
+#define TYPE_ODR 0
+#define TYPE_IDR 1
+#define TYPE_DDR 2
+#define TYPE_CR1 3
+#define TYPE_CR2 4
+
+
+
+void show_hex(uint16_t val)
+{
+	uart_write_hex_8( (val>>8) & 0xFF);
+	uart_write_hex_8(val & 0xFF);
+	uart_write_ch(' ');
+}
+
+unsigned char *get_port_type_addr(uint8_t port, uint8_t type)
+{
+	unsigned char *p = (unsigned char *)0x5000;
+
+	port -= 'A';
+	p += port*5; // Select port
+	p += type; // Select register
+
+
+	return p;
+}
+
+uint8_t get_pin_info(uint8_t port, uint8_t pin, uint8_t type)
+{
+	unsigned char *p = get_port_type_addr(port, type);
+	return ((*p) & (1<<pin)) ? 1 : 0;
+}
+
+void pin_turn_on(uint8_t port, uint8_t pin, uint8_t type)
+{
+	unsigned char *p = get_port_type_addr(port, type);
+	*p |= (1<<pin);
+}
+
+void pin_turn_off(uint8_t port, uint8_t pin, uint8_t type)
+{
+	unsigned char *p = get_port_type_addr(port, type);
+	*p &= ~(1<<pin);
+}
+
+uint8_t get_pin_input(uint8_t port, uint8_t pin)
+{
+	return get_pin_info(port, pin, TYPE_IDR);
+}
+
+uint8_t get_pin_output(uint8_t port, uint8_t pin)
+{
+	return get_pin_info(port, pin, TYPE_ODR);
+}
+
+uint8_t get_pin_is_output(uint8_t port, uint8_t pin)
+{
+	return get_pin_info(port, pin, TYPE_DDR);
+}
+
+uint8_t get_pin_cr1(uint8_t port, uint8_t pin)
+{
+	return get_pin_info(port, pin, TYPE_CR1);
+}
+
+uint8_t get_pin_cr2(uint8_t port, uint8_t pin)
+{
+	return get_pin_info(port, pin, TYPE_CR2);
+}
+
+uint8_t port;
+uint8_t pin;
+
+void display_pin_state(uint8_t port, uint8_t pin)
+{
+	uart_write_ch('P');
+	uart_write_ch(port);
+	uart_write_ch('0' + pin);
+	uart_write_ch(' ');
+	if (!get_pin_is_output(port, pin)) {
+		uart_write_ch('I');
+		uart_write_ch('0' + get_pin_input(port, pin));
+	} else {
+		uart_write_ch('O');
+		uart_write_ch('0' + get_pin_output(port, pin));
+	}
+	uart_write_ch(' ');
+	uart_write_ch('C');
+	uart_write_ch('1');
+	uart_write_ch(' ');
+	uart_write_ch('0' + get_pin_cr1(port, pin));
+	uart_write_ch(' ');
+	uart_write_ch('C');
+	uart_write_ch('2');
+	uart_write_ch(' ');
+	uart_write_ch('0' + get_pin_cr2(port, pin));
+	uart_write_ch('\r');
+	uart_write_ch('\n');
+}
+
+void display_all_pins(void)
+{
+	uint8_t port;
+	uint8_t pin;
+
+	for (port = 'A'; port <= 'D'; port++) {
+		for (pin = 0; pin <= 7; pin++) {
+			display_pin_state(port, pin);
+		}
+	}
+}
+
+void uart_process_char(uint8_t ch)
+{
+	switch (ch) {
+		case '\n':
+		case '\r':
+			display_pin_state(port, pin);
+			break;
+
+		case '?':
+			display_all_pins();
+			break;
+
+		case 'A':
+		case 'B':
+		case 'C':
+		case 'D':
+			port = ch;
+			display_pin_state(port, pin);
+			break;
+		case 'a':
+		case 'b':
+		case 'c':
+		case 'd':
+			port = 'A' + ch - 'a';
+			display_pin_state(port, pin);
+			break;
+
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+			pin = ch - '0';
+			display_pin_state(port, pin);
+			break;
+
+		case 'I':
+		case 'i':
+			pin_turn_off(port, pin, TYPE_DDR);
+			display_pin_state(port, pin);
+			break;
+		case 'O':
+		case 'o':
+			pin_turn_on(port, pin, TYPE_DDR);
+			display_pin_state(port, pin);
+			break;
+
+		case 'H':
+		case 'h':
+			pin_turn_on(port, pin, TYPE_ODR);
+			display_pin_state(port, pin);
+			break;
+		case 'L':
+		case 'l':
+			pin_turn_off(port, pin, TYPE_ODR);
+			display_pin_state(port, pin);
+			break;
+
+		case 'Q':
+		case 'q':
+			pin_turn_on(port, pin, TYPE_CR1);
+			display_pin_state(port, pin);
+			break;
+		case 'W':
+		case 'w':
+			pin_turn_off(port, pin, TYPE_CR1);
+			display_pin_state(port, pin);
+			break;
+
+		case 'Z':
+		case 'z':
+			pin_turn_on(port, pin, TYPE_CR2);
+			display_pin_state(port, pin);
+			break;
+		case 'X':
+		case 'x':
+			pin_turn_off(port, pin, TYPE_CR2);
+			display_pin_state(port, pin);
+			break;
+
+		case 'S':
+		case 's':
+			scan = 1-scan;
+			uart_write_ch(scan ? 'S' : 's');
+			uart_write_ch('\r');
+			uart_write_ch('\n');
+
+		case 0: // Do nothing if there is no input
+			break;
+
+		default:
+			uart_write_ch('X');
+			uart_write_ch('X');
+			uart_write_ch('X');
+			uart_write_ch(' ');
+			display_pin_state(port, pin);
+			break;
+	}
+}
+
+uint8_t process_input(uint8_t port, uint8_t mask, uint8_t state, uint8_t last_state)
 {
 	uint8_t pin;
 
@@ -129,9 +351,15 @@ uint8_t process_input(uint8_t port, uint8_t state, uint8_t last_state)
 		uint8_t cur_pin = (state & bit) ? 1 : 0;
 		uint8_t last_pin = (last_state & bit) ? 1 : 0;
 
+		if ((mask & bit) == 1) // Output bit, do not read
+			continue;
+
 		if (port == 'D') {
 			if (pin == 5 || pin == 6)
 				continue; // UART pins, dont sample
+		} else if (port == 'A') {
+			if (pin < 1 || pin > 3)
+				continue; // Skip pin A5, it toggles all the time and cant be changed from input
 		}
 
 		if (cur_pin != last_pin) {
@@ -149,106 +377,33 @@ uint8_t process_input(uint8_t port, uint8_t state, uint8_t last_state)
 	return state;
 }
 
+void scan_inputs(void)
+{
+	last_pa_idr = process_input('A', PA_DDR, PA_IDR, last_pa_idr);
+	last_pb_idr = process_input('A', PB_DDR, PB_IDR, last_pb_idr);
+	last_pc_idr = process_input('A', ~PC_DDR, PC_IDR, last_pc_idr);
+	last_pd_idr = process_input('A', ~PD_DDR, PD_IDR, last_pd_idr);
+}
+
+
 int main()
 {
 	uint8_t ch;
-	uint8_t r = 1;
-	uint8_t p = 0;
-	uint8_t c1 = 0;
-	uint8_t c2 = 0;
-	uint8_t is_output = 1;
-	uint8_t last_PA = 0;
-	uint8_t last_PB = 0;
-	uint8_t last_PC = 0;
-	uint8_t last_PD = 0;
+	scan = 1;
 
 	clk_init();
 	uart_init();
 
-	output_configure();
+	input_configure();
+
+	port = 'A';
+	pin = 0;
 
 	do {
-		uint8_t c1v = c1 ? 0xFF : 0x00;
-		uint8_t c2v = c2 ? 0xFF : 0x00;
-		uint8_t v = 1 << p;
-
-		if (is_output) {
-			uart_write("P");
-			uart_write_ch('A' + r - 1);
-			uart_write_ch('0' + p);
-			uart_write(" CR1 ");
-			uart_write_ch('0' + c1);
-			uart_write(" CR2 ");
-			uart_write_ch('0' + c2);
-			uart_write("\r\n");
-
-			PA_ODR = 0;
-			PB_ODR = 0;
-			PC_ODR = 0;
-			PD_ODR = 0;
-
-			if (r == 1) {
-				PA_CR1 = c1v;
-				PA_CR2 = c2v;
-				PA_ODR = v;
-			} else if (r == 2) {
-				PB_CR1 = c1v;
-				PB_CR2 = c2v;
-				PB_ODR = v;
-			} else if (r == 3) {
-				PC_CR1 = c1v;
-				PC_CR2 = c2v;
-				PC_ODR = v;
-			} else if (r == 4) {
-				PD_CR1 = c1v;
-				PD_CR2 = c2v;
-				PD_ODR = v;
-			}
-		} else {
-			// Do input
-			PA_CR1 = PB_CR1 = PC_CR1 = PD_CR1 = c1v;
-			PA_CR2 = PB_CR2 = PC_CR2 = PD_CR2 = c2v;
-
-			last_PA = process_input('A', PA_IDR, last_PA);
-			last_PB = process_input('B', PB_IDR, last_PB);
-			last_PC = process_input('C', PC_IDR, last_PC);
-			last_PD = process_input('D', PD_IDR, last_PD);
-		}
-
 		flush_write();
-
-		if (is_output)
-			ch = uart_read_ch();
-		else {
-			ch = uart_read_ch_non_block();
-		}
-
-		if (ch >= 'A' && ch <= 'D')
-			r = ch - 'A' + 1;
-		else if (ch >= 'a' && ch <= 'd')
-			r = ch - 'a' + 1;
-		else if (ch >= '0' && ch <= '7')
-			p = ch - '0';
-		else if (ch == 'Q' || ch == 'q') {
-			c1 = 0;
-			uart_write("CR1 is now 0\r\n");
-		} else if (ch == 'W' || ch == 'w') {
-			c1 = 1;
-			uart_write("CR1 is now 1\r\n");
-		} else if (ch == 'Z' || ch == 'z') {
-			c2 = 0;
-			uart_write("CR2 is now 0\r\n");
-		} else if (ch == 'X' || ch == 'x') {
-			c2 = 1;
-			uart_write("CR2 is now 1\r\n");
-		} else if (ch == 'I' || ch == 'i') {
-			is_output = 0;
-			input_configure();
-			last_PA = last_PB = last_PC = last_PD = 0;
-		} else if (ch == 'O' || ch == 'o') {
-			is_output = 1;
-			output_configure();
-		}
-
-	} while(1);
+		ch = uart_read_ch_non_block();
+		uart_process_char(ch);
+		if (scan)
+			scan_inputs();
+	} while (1);
 }
