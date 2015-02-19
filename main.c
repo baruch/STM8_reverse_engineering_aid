@@ -380,9 +380,9 @@ uint8_t process_input(uint8_t port, uint8_t mask, uint8_t state, uint8_t last_st
 void scan_inputs(void)
 {
 	last_pa_idr = process_input('A', PA_DDR, PA_IDR, last_pa_idr);
-	last_pb_idr = process_input('A', PB_DDR, PB_IDR, last_pb_idr);
-	last_pc_idr = process_input('A', ~PC_DDR, PC_IDR, last_pc_idr);
-	last_pd_idr = process_input('A', ~PD_DDR, PD_IDR, last_pd_idr);
+	last_pb_idr = process_input('B', PB_DDR, PB_IDR, last_pb_idr);
+	last_pc_idr = process_input('C', PC_DDR, PC_IDR, last_pc_idr);
+	last_pd_idr = process_input('D', PD_DDR, PD_IDR, last_pd_idr);
 }
 
 
