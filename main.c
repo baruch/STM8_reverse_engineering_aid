@@ -2,6 +2,10 @@
 #include <string.h>
 #include <stdint.h>
 
+uint8_t readbuf[255];
+uint8_t readbuf_wr_head;
+uint8_t readbuf_rd_head;
+
 uint8_t last_pa_idr;
 uint8_t last_pb_idr;
 uint8_t last_pc_idr;
@@ -9,15 +13,58 @@ uint8_t last_pd_idr;
 
 uint8_t scan;
 
-void uart_write_ch(const char ch)
+void readbuf_init(void)
 {
-	while(!(USART1_SR & USART_SR_TXE));
-	USART1_DR = ch;
+	readbuf_wr_head = 0;
+	readbuf_rd_head = 255;
 }
 
-void flush_write()
+void readbuf_append(uint8_t ch)
 {
-	while(!(USART1_SR & USART_SR_TXE));
+	if (readbuf_rd_head == 255)
+		readbuf_rd_head = readbuf_wr_head;
+	readbuf[readbuf_wr_head++] = ch;
+	if (readbuf_wr_head == 255)
+		readbuf_wr_head = 0;
+}
+
+uint8_t readbuf_available(void)
+{
+	return readbuf_rd_head != 255;
+}
+
+uint8_t readbuf_read(void)
+{
+	uint8_t ch = readbuf[readbuf_rd_head];
+	readbuf_rd_head++;
+	if (readbuf_rd_head == 255)
+		readbuf_rd_head = 0;
+	if (readbuf_rd_head == readbuf_wr_head)
+		readbuf_rd_head = 255;
+	return ch;
+}
+
+uint8_t uart_read_ch_non_block(void)
+{
+	uint8_t sr = USART1_SR;
+	if (sr & USART_SR_RXNE)
+		return USART1_DR;
+	else
+		return 0;
+}
+
+void uart_write_ch(const char ch)
+{
+	while (1) {
+		uint8_t sr = USART1_SR;
+		USART1_SR = 0;
+		if (sr & USART_SR_RXNE) {
+			readbuf_append(USART1_DR);
+		} else if (sr & USART_SR_TXE) {
+			USART1_DR = ch;
+			break;
+		}
+	}
 }
 
 void uart_write(const char *str)
@@ -49,20 +96,6 @@ void uart_write_hex_8(uint8_t v)
 
 	nibble = v & 0x0F;
 	uart_write_nibble(nibble);
-}
-
-uint8_t uart_read_ch(void)
-{
-	while (!(USART1_SR & USART_SR_RXNE));
-	return USART1_DR;
-}
-
-uint8_t uart_read_ch_non_block(void)
-{
-	if (USART1_SR & USART_SR_RXNE)
-		return USART1_DR;
-	else
-		return 0;
 }
 
 void clk_init()
@@ -319,11 +352,18 @@ void uart_process_char(uint8_t ch)
 			break;
 
 		case 'S':
-		case 's':
-			scan = 1-scan;
-			uart_write_ch(scan ? 'S' : 's');
+			scan = 1;
+			uart_write_ch('S');
 			uart_write_ch('\r');
 			uart_write_ch('\n');
+			break;
+
+		case 's':
+			scan = 0;
+			uart_write_ch('s');
+			uart_write_ch('\r');
+			uart_write_ch('\n');
+			break;
 
 		case 0: // Do nothing if there is no input
 			break;
@@ -391,6 +431,7 @@ int main()
 	scan = 1;
 
 	clk_init();
+	readbuf_init();
 	uart_init();
 
 	input_configure();
@@ -399,8 +440,10 @@ int main()
 	pin = 0;
 
 	do {
-		flush_write();
-		ch = uart_read_ch_non_block();
+		if (readbuf_available())
+			ch = readbuf_read();
+		else
+			ch = uart_read_ch_non_block();
 		uart_process_char(ch);
 		if (scan)
 			scan_inputs();
